@@ -54,6 +54,51 @@ export function VoiceRecorder({ onTranscription, isLoading }: VoiceRecorderProps
         }
       };
 
+      const stopRecordingInternal = () => {
+        if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
+          mediaRecorderRef.current.stop();
+          setIsRecording(false);
+        }
+      };
+
+      const sendAudioForTranscriptionInternal = async (audioBlob: Blob) => {
+        setIsProcessing(true);
+        try {
+          toast.info('正在转换语音为文字... 🧠');
+
+          const formData = new FormData();
+          formData.append('audio', audioBlob, 'recording.webm');
+
+          const response = await fetch('/api/stt', {
+            method: 'POST',
+            body: formData,
+          });
+
+          const result = await response.json();
+
+          if (result.success) {
+            toast.success(`识别成功：${result.text} ✨`);
+            toast.info('正在根据文字生成图片... 🎨');
+
+            // 将识别的文字传递给图片生成
+            onTranscription(result.text);
+          } else {
+            console.error('API返回错误:', result);
+            toast.error(result.message || '语音识别失败，请重试 🔄');
+
+            // 如果有详细错误信息，也显示在控制台
+            if (result.details) {
+              console.error('错误详情:', result.details);
+            }
+          }
+        } catch (error) {
+          console.error('语音转文字失败:', error);
+          toast.error('网络有点慢，再试一次吧！🔄');
+        } finally {
+          setIsProcessing(false);
+        }
+      };
+
       mediaRecorder.onstop = async () => {
         const audioBlob = new Blob(chunksRef.current, { type: 'audio/webm' });
         const url = URL.createObjectURL(audioBlob);
@@ -65,7 +110,7 @@ export function VoiceRecorder({ onTranscription, isLoading }: VoiceRecorderProps
         }
 
         // 自动发送语音转文字
-        await sendAudioForTranscription(audioBlob);
+        await sendAudioForTranscriptionInternal(audioBlob);
       };
 
       mediaRecorder.start();
@@ -74,7 +119,7 @@ export function VoiceRecorder({ onTranscription, isLoading }: VoiceRecorderProps
       // 10秒后自动停止录音
       setTimeout(() => {
         if (mediaRecorder.state === 'recording') {
-          stopRecording();
+          stopRecordingInternal();
         }
       }, 10000);
 
@@ -84,7 +129,7 @@ export function VoiceRecorder({ onTranscription, isLoading }: VoiceRecorderProps
       console.error('录音失败:', error);
       toast.error('无法访问麦克风，请检查权限设置 🎙️');
     }
-  }, []);
+  }, [onTranscription]);
 
   const stopRecording = useCallback(() => {
     if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
